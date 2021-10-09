@@ -1,0 +1,230 @@
+---
+title: "HWW 2"
+author: "Songru Wang"
+date: "10/6/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(dplyr)
+library(dtplyr)
+library(psych)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+
+Data Wrangling-->
+you can merge these datasets using the location variable. Once combined, you will need to do the following:
+1. In the case of missing values, impute data using the average within the variables “male” and “hispanic.”
+```{r,cache=TRUE}
+library(readr)
+chs_individual <- read_csv("~/Desktop/USC/Master/Fall Semester/Introduction to Health Data Science/HW 2/chs_individual.csv")
+chs_regional_2 <- read_csv("~/Desktop/USC/Master/Fall Semester/Introduction to Health Data Science/HW 2/chs_regional-2.csv")
+
+chs<-merge(chs_individual,chs_regional_2,by="townname")
+
+chs_c<-chs
+chs_mh<-
+  chs%>%
+  filter(male==1 & hispanic ==1)
+ag<-as.numeric(chs$agepft)
+hei<-as.numeric(chs$height)
+wei<-as.numeric(chs$weight)
+BmI<-as.numeric(chs$bmi)
+
+chs_c$agepft<-fcoalesce(ag,mean(chs_mh$agepft,na.rm=TRUE))
+chs_c$height<-fcoalesce(hei,mean(chs_mh$height,na.rm=TRUE))
+chs_c$weight<-fcoalesce(wei,mean(chs_mh$weight,na.rm=TRUE))
+chs_c$bmi<-fcoalesce(BmI,mean(chs_mh$bmi,na.rm=TRUE))
+
+
+for (i in 21:ncol(chs_c)) {
+  chs_c[,i]<-fcoalesce(chs_c[,i],mean(chs_mh[,i],na.rm=TRUE))
+}
+```
+
+
+2.Create a new categorical variable named “obesity_level” using the BMI measurement (underweight BMI<14; normal BMI 14-22; overweight BMI 22-24; obese BMI>24). To make sure the variable is rightly coded, create a summary table that contains the minimum BMI, maximum BMI, and the total number of observations per category.
+```{r,cache=TRUE}
+chs_c<-
+  chs_c%>%
+  mutate(obesity_level= case_when(
+    bmi<=14 ~ "underweight",
+    bmi>14 & bmi<=22 ~ "normal",
+    bmi>22 & bmi<=24 ~ "overweight",
+    bmi>24 ~ "obse"
+  ))
+
+summary(chs_c$bmi)
+
+chs_c%>%
+  group_by(obesity_level)%>%
+  summarise(count=n())
+```
+
+
+3.Create another categorical variable named “smoke_gas_exposure” that summarizes “Second Hand Smoke” and “Gas Stove.” The variable should have four categories in total.
+```{r,cache=TRUE}
+chs_c<-
+  chs_c%>%
+  mutate(smoke_gas_exposure=case_when(
+    smoke==0 & gasstove==0 ~ "No S & No gas",
+    smoke==1 & gasstove==0 ~ "S & No gas",
+    smoke==0 & gasstove==1 ~ "No S & gas",
+    smoke==1 & gasstove==1 ~ "S & gas"
+  ))
+```
+
+
+4.Create four summary tables showing the average (or proportion, if binary) and sd of “Forced expiratory volume in 1 second (ml)” and asthma indicator by town, sex, obesity level, and “smoke_gas_exposure.”
+```{r,cache=TRUE}
+#FEV
+chs_c%>%
+  group_by(townname)%>%
+  summarize(mean(fev/60),sd(fev/60))
+
+#asthma
+
+chs_c%>%
+  filter(asthma==1)%>%
+  group_by(townname)%>%
+  summarize(n())
+
+chs_c%>%
+  filter(asthma==1)%>%
+  group_by(male)%>%
+  summarize(n())
+
+chs_c%>%
+  filter(asthma==1)%>%
+  group_by(obesity_level)%>%
+  summarize(n())
+
+chs_c%>%
+  filter(asthma==1)%>%
+  group_by(smoke_gas_exposure)%>%
+  summarize(n())
+```
+
+
+
+
+Looking at the Data (EDA)
+The primary questions of interest are: 1. What is the association between BMI and FEV (forced expiratory volume)? 2. What is the association between smoke and gas exposure and FEV? 3. What is the association between PM2.5 exposure and FEV?
+
+1.Facet plot showing scatterplots with regression lines of BMI vs FEV by “townname”.
+```{r,cache=TRUE}
+library(ggplot2)
+chs_c%>%
+  ggplot(aes(x=bmi,y=fev,color=townname))+
+  geom_point(size=0.5)+
+  geom_smooth(method="lm",color="black")+
+  facet_wrap(~townname)
+
+## According the overall graphs, I found there are positive relationships
+```
+
+2.Stacked histograms of FEV by BMI category and FEV by smoke/gas exposure. Use different color schemes than the ggplot default.
+```{r,cache=TRUE}
+library(ggplot2)
+library(RColorBrewer)
+chs_c%>%
+  ggplot(aes(x=fev,fill=obesity_level))+
+  geom_histogram(binwidth=30)+
+  scale_fill_brewer(palette="Dark2")+
+  coord_flip()
+  
+
+chs_c%>%
+  ggplot(aes(x=fev,fill=smoke_gas_exposure))+
+  geom_histogram(binwidth = 30)+
+  scale_fill_brewer(palette="Set2")+
+  coord_flip()
+```
+
+
+3.Barchart of BMI by smoke/gas exposure.
+```{r,cache=TRUE}
+ggplot(chs_c,
+       aes(x=obesity_level,fill=smoke_gas_exposure))+
+  geom_bar(position='stack')
+
+```
+
+
+4.Statistical summary graphs of FEV by BMI and FEV by smoke/gas exposure category.
+```{r,cache=TRUE}
+ggplot(mapping = aes(x=chs_c$obesity_level,y=chs_c$fev))+
+  stat_summary()+
+  stat_summary(
+    mapping = aes(x=chs_c$obesity_level,y=chs_c$fev),
+    fun.min = min,
+    fun.max = max,
+    fun="mean_sd1")
+  
+  
+ggplot(mapping = aes(x=chs_c$smoke_gas_exposure,y=chs_c$fev))+
+  stat_summary()+
+  stat_summary(
+    mapping = aes(x=chs_c$smoke_gas_exposure,y=chs_c$fev),
+    fun.min = min,
+    fun.max = max,
+    fun="mean_sd1")
+
+```
+
+
+5.A leaflet map showing the concentrations of PM2.5 mass in each of the CHS communities.
+```{r,cache=TRUE}
+library(leaflet)
+
+commu.pal <- colorNumeric(c('darkgreen','goldenrod','brown'), domain=chs_c$pm25_mass)
+leaflet(chs_c)%>%
+  addProviderTiles('CartoDB.Positron')%>%
+  addCircles(
+    lat = ~lat,lng = ~lon,
+    label = ~paste0(round(pm25_mass,2)),color = ~commu.pal(pm25_mass),
+    opacity = 1, fillOpacity = 1, radius = 500
+  )%>%
+  addLegend('bottomleft',pal = commu.pal,values = chs_c$pm25_mass,title = 'PM2.5 Concentration',opacity = 1)
+  
+
+```
+
+
+6.Choose a visualization to examine whether PM2.5 mass is associated with FEV.
+```{r,cache=TRUE}
+
+chs_c%>%
+  ggplot(aes(x=pm25_mass,y=fev,color=townname))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  facet_wrap(~townname)
+```
+
+
+
